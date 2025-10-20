@@ -54,14 +54,13 @@ let stream = null;
 let scanning = false;
 
 async function startCamera() {
-  if (stream) {
-    stopCamera();
-  }
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
     video.srcObject = stream;
     scanning = true;
-    scanLoop();
+    video.onloadedmetadata = () => {
+      if (scanning) scanLoop();
+    };
   } catch (e) {
     alert("Ошибка доступа к камере: " + e);
   }
@@ -77,6 +76,10 @@ function stopCamera() {
 
 function scanLoop() {
   if (!scanning) return;
+  if (video.videoWidth === 0 || video.videoHeight === 0) {
+    setTimeout(scanLoop, 100);
+    return;
+  }
   const canvas = document.createElement('canvas');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -84,11 +87,7 @@ function scanLoop() {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-  // Используем библиотеку jsQR для чтения штрихкодов QR и штрихкодов не поддерживает jsQR
-  // Вместо этого для простоты эмулируем распознавание кодов с prompt в примере.
-  // Для реального проекта надо подключать специализированные библиотеки.
-
-  // Здесь временно - имитация сканирования через пользовательский ввод
+  // В демонстрационной версии вместо реального сканирования предлагается ввод штрих-кода вручную
   scanning = false;
   stopCamera();
   let simulatedCode = prompt("Введите штрих код для сканирования из списка:\n" + boxBarcodes.join("\n"));
