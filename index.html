@@ -4,9 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Сканер штрих-кода и корзина</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.7/minified/html5-qrcode.min.js"></script>
 <style>
   body { font-family: Arial, sans-serif; margin: 20px; }
-  #video { width: 100%; max-width: 400px; border: 1px solid #ccc; }
+  #reader { width: 100%; max-width: 400px; }
   #cart { margin-top: 20px; }
   .cart-item { display: flex; justify-content: space-between; margin-bottom: 5px; }
   button { margin-left: 10px; }
@@ -17,8 +18,10 @@
 <body>
 
 <h2>Сканирование штрих-кода</h2>
-<video id="video" playsinline autoplay></video>
-<button id="startScanBtn">Начать сканирование</button>
+<div id="reader"></div>
+<div>
+  <button id="stopScanBtn" style="display:none;">Остановить сканирование</button>
+</div>
 
 <div id="cart">
   <h3>Корзина</h3>
@@ -43,70 +46,13 @@ const products = {
 };
 
 let cart = {};
-const video = document.getElementById('video');
-const startScanBtn = document.getElementById('startScanBtn');
 const cartItemsDiv = document.getElementById('cartItems');
 const paymentSection = document.getElementById('paymentSection');
 const payBtn = document.getElementById('payBtn');
 const messageDiv = document.getElementById('message');
+const stopScanBtn = document.getElementById('stopScanBtn');
 
-let stream = null;
-let scanning = false;
-
-async function startCamera() {
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    video.srcObject = stream;
-    scanning = true;
-    video.onloadedmetadata = () => {
-      if (scanning) scanLoop();
-    };
-  } catch (e) {
-    alert("Ошибка доступа к камере: " + e);
-  }
-}
-
-function stopCamera() {
-  if(stream) {
-    stream.getTracks().forEach(track => track.stop());
-    stream = null;
-  }
-  scanning = false;
-}
-
-function scanLoop() {
-  if (!scanning) return;
-  if (video.videoWidth === 0 || video.videoHeight === 0) {
-    setTimeout(scanLoop, 100);
-    return;
-  }
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-  // В демонстрационной версии вместо реального сканирования предлагается ввод штрих-кода вручную
-  scanning = false;
-  stopCamera();
-  let simulatedCode = prompt("Введите штрих код для сканирования из списка:\n" + boxBarcodes.join("\n"));
-  if(simulatedCode && boxBarcodes.includes(simulatedCode)) {
-    addToCart(simulatedCode);
-  } else if(simulatedCode) {
-    alert("Товар с таким штрих кодом не найден");
-  }
-  startScanBtn.style.display = 'inline';
-}
-
-function addToCart(code) {
-  if(cart[code]) {
-    cart[code]++;
-  } else {
-    cart[code] = 1;
-  }
-  renderCart();
-}
+let html5QrcodeScanner;
 
 function renderCart() {
   cartItemsDiv.innerHTML = "";
@@ -129,29 +75,79 @@ function renderCart() {
   paymentSection.style.display = hasItems ? 'block' : 'none';
 }
 
+function addToCart(code) {
+  if(cart[code]) {
+    cart[code]++;
+  } else {
+    cart[code] = 1;
+  }
+  renderCart();
+}
+
 function removeFromCart(code) {
   delete cart[code];
   renderCart();
 }
 
+function onScanSuccess(decodedText, decodedResult) {
+  if (boxBarcodes.includes(decodedText)) {
+    addToCart(decodedText);
+    messageDiv.textContent = `Добавлен товар: ${products[decodedText]}`;
+  } else {
+    messageDiv.textContent = `Товар с штрихкодом ${decodedText} не найден`;
+  }
+}
+
+function startScanner() {
+  messageDiv.textContent = "";
+  stopScanBtn.style.display = 'inline';
+  html5QrcodeScanner = new Html5Qrcode("reader");
+  const config = { fps: 10, qrbox: {width: 250, height: 100} };
+  html5QrcodeScanner.start(
+    { facingMode: "environment" }, 
+    config, 
+    onScanSuccess,
+    (errorMessage) => {
+      // Можно выводить ошибки сканирования в консоль, не мешая UX
+      console.log("Scan error:", errorMessage);
+    }
+  ).catch(err => {
+    alert("Ошибка запуска сканера: " + err);
+  });
+}
+
+function stopScanner() {
+  if(html5QrcodeScanner) {
+    html5QrcodeScanner.stop().then(() => {
+      html5QrcodeScanner.clear();
+      stopScanBtn.style.display = 'none';
+      messageDiv.textContent = "Сканирование остановлено";
+    }).catch(err => {
+      console.error("Ошибка остановки сканера:", err);
+    });
+  }
+}
+
 payBtn.onclick = () => {
   if(Object.keys(cart).length === 0) return;
+  stopScanner();
   messageDiv.textContent = "Оплата прошла, Приятного апетита";
   cart = {};
   renderCart();
   setTimeout(() => {
     messageDiv.textContent = "";
-    startScanBtn.style.display = 'inline';
+    startScanner();
   }, 5000);
 }
 
-startScanBtn.onclick = () => {
-  startScanBtn.style.display = 'none';
-  messageDiv.textContent = "";
-  startCamera();
-};
+stopScanBtn.onclick = () => {
+  stopScanner();
+}
 
-renderCart();
+window.onload = () => {
+  renderCart();
+  startScanner();
+};
 </script>
 
 </body>
