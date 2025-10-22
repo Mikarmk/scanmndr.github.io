@@ -1,42 +1,280 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-  <title>Сканер штрих-кода</title>
-  <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Сканер штрих-кода и корзина</title>
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+    color: #333;
+  }
+
+  .container {
+    max-width: 500px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  h1 {
+    text-align: center;
+    color: #2c3e50;
+    margin-bottom: 20px;
+    font-weight: 600;
+  }
+
+  #video {
+    width: 100%;
+    max-width: 400px;
+    border-radius: 12px;
+    display: block;
+    margin: 20px auto;
+    background: #000;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+  }
+
+  #message {
+    text-align: center;
+    font-size: 1.2em;
+    margin: 15px auto;
+    padding: 10px 20px;
+    border-radius: 8px;
+    max-width: 400px;
+    font-weight: 500;
+  }
+
+  #cart {
+    max-width: 400px;
+    margin: 20px auto;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+    display: none;
+  }
+
+  #cart h2 {
+    margin-top: 0;
+    color: #2c3e50;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+  }
+
+  #cart ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  #cart li {
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  #cart-total {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+    font-size: 1.1em;
+    text-align: right;
+    font-weight: 600;
+  }
+
+  button {
+    background: #3498db;
+    border: none;
+    padding: 12px 20px;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    width: 100%;
+    margin-top: 10px;
+    transition: background 0.3s;
+  }
+
+  button:hover:not(:disabled) {
+    background: #2980b9;
+  }
+
+  button:disabled {
+    background: #bdc3c7;
+    cursor: default;
+  }
+
+  .remove-btn {
+    background: #e74c3c;
+    padding: 6px 12px;
+    font-size: 0.8em;
+    margin-left: 10px;
+    border-radius: 4px;
+  }
+
+  .remove-btn:hover {
+    background: #c0392b;
+  }
+
+  @media (max-width: 480px) {
+    .container {
+      padding: 10px;
+    }
+
+    #video {
+      max-width: 100%;
+    }
+
+    #cart {
+      width: 100%;
+      margin: 10px 0;
+    }
+  }
+</style>
 </head>
 <body>
-  <h1>Сканер штрих-кода</h1>
-  <div id="scanner-container" style="width: 300px; height: 200px;"></div>
-  <p>Распознанный штрих-код: <span id="barcode-result"></span></p>
 
-  <script>
-    Quagga.init({
-      inputStream: {
-        name: "Live",
-        type: "LiveStream",
-        target: document.querySelector('#scanner-container'),
-        constraints: {
-          width: 300,
-          height: 200,
-          facingMode: "environment"
+<h1>Сканер штрих-кода</h1>
+<video id="video" autoplay muted playsinline></video>
+<div id="message"></div>
+
+<div id="cart" style="display:none;">
+  <h2>Корзина</h2>
+  <ul id="cart-list"></ul>
+  <button id="pay-btn">Оплатить</button>
+</div>
+
+<script src="https://unpkg.com/@zxing/library@0.18.6"></script>
+<script>
+  const products = {
+    "123456789012": { name: "Салат цезарь", price: 350 },
+    "987654321098": { name: "Куриный шницель с картошкой", price: 450 },
+    "135790246813": { name: "Сендвич с курицей", price: 280 },
+    "246801357924": { name: "Том ям", price: 380 },
+    "112233445566": { name: "Рамен", price: 320 }
+  };
+
+  let cart = {};
+  let codeReader = null;
+  let scanning = true;
+
+  const video = document.getElementById('video');
+  const messageDiv = document.getElementById('message');
+  const cartDiv = document.getElementById('cart');
+  const cartList = document.getElementById('cart-list');
+  const payBtn = document.getElementById('pay-btn');
+
+  function updateCartUI() {
+    cartList.innerHTML = '';
+    let total = 0;
+
+    for(let code in cart) {
+      let product = products[code];
+      let quantity = cart[code];
+      let itemTotal = product.price * quantity;
+      total += itemTotal;
+
+      let li = document.createElement('li');
+      li.innerHTML = `
+        <span>${product.name} (x${quantity})</span>
+        <span>${itemTotal} ₽
+          <button class="remove-btn" data-code="${code}">Удалить</button>
+        </span>
+      `;
+      cartList.appendChild(li);
+    }
+
+    // Add total sum
+    if(Object.keys(cart).length > 0) {
+      let totalElement = document.createElement('div');
+      totalElement.id = 'cart-total';
+      totalElement.innerHTML = `<strong>Итого: ${total} ₽</strong>`;
+      cartList.appendChild(totalElement);
+      cartDiv.style.display = 'block';
+      payBtn.disabled = false;
+    } else {
+      cartDiv.style.display = 'none';
+    }
+
+    // Add event listeners to remove buttons
+    document.querySelectorAll('.remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        let code = e.target.getAttribute('data-code');
+        delete cart[code];
+        updateCartUI();
+      });
+    });
+  }
+
+  payBtn.addEventListener('click', () => {
+    scanning = false;
+    if (codeReader) {
+      codeReader.reset();
+    }
+
+    // Payment animation
+    messageDiv.innerHTML = `
+      <div style="color: green; font-size: 1.5em; text-align: center; padding: 20px; background: rgba(255,255,255,0.8); border-radius: 10px;">
+        ✅ Оплата прошла успешно!<br>
+        Приятного аппетита!<br>
+        <small>Возврат к сканированию через 5 секунд...</small>
+      </div>
+    `;
+
+    // Clear cart
+    cart = {};
+    updateCartUI();
+
+    // Restart scanning after 5 seconds
+    setTimeout(() => {
+      messageDiv.textContent = "";
+      scanning = true;
+      startScanner();
+    }, 5000);
+  });
+
+  function startScanner() {
+    if (!scanning) return;
+
+    // Stop any existing scanner
+    if (codeReader) {
+      codeReader.reset();
+    }
+
+    codeReader = new ZXing.BrowserBarcodeReader();
+    codeReader.decodeFromVideoDevice(null, video, (result, err) => {
+      if (result && scanning) {
+        let code = result.text;
+        if(products[code]) {
+          cart[code] = (cart[code] || 0) + 1;
+          updateCartUI();
+          messageDiv.textContent = `✅ Добавлен: ${products[code].name} (${products[code].price} ₽)`;
+          messageDiv.style.color = "green";
+          setTimeout(() => {
+            messageDiv.textContent = "";
+          }, 2000);
+        } else {
+          messageDiv.textContent = `❌ Товар с кодом ${code} не найден`;
+          messageDiv.style.color = "red";
+          setTimeout(() => {
+            messageDiv.textContent = "";
+          }, 2000);
         }
-      },
-      decoder: {
-        readers: ["code_128_reader", "ean_reader", "ean_8_reader", "code_39_reader", "upc_reader"]
       }
-    }, function(err) {
-      if (err) {
+      if (err && !(err instanceof ZXing.NotFoundException)) {
         console.error(err);
-        return;
       }
-      Quagga.start();
     });
+  }
 
-    Quagga.onDetected(function(result) {
-      var code = result.codeResult.code;
-      document.getElementById('barcode-result').textContent = code;
-      Quagga.stop(); 
-    });
-  </script>
+  startScanner();
+
+</script>
+
 </body>
 </html>
